@@ -25,14 +25,22 @@ origin.
 
 Curried form equivalent to the above, giving `greens(h, solveobject(h), args...)`.
 
-    g(ω, cells::Pair)
-    g(ω)[cells::Pair]
+    g(ω, cells::Pair; source = I, dest = I)
+    g(ω; source = I, dest = I)[cells::Pair]
 
 From a constructed `g::GreensFunction`, obtain the retarded Green's function matrix at
 frequency `ω` between unit cells `src` and `dst`, where `src, dst` are `::NTuple{L,Int}` or
 `SVector{L,Int}`. If allowed by the used `solveobject`, `g0=g(ω)` builds an solution object
 that can efficiently produce the Greens function between different cells at fixed `ω` with
 `g0[cells]` without repeating cell-independent parts of the computation.
+
+If `g` has a scalar eltype (single-orbital sites), the keywords `source` and `dest` allows
+to specify projection matrices, possibly non-square, that act as source and sink for the
+propagator, so that `g(ω, ...; source = S, dest = D) = D'*g(ω,...)*S`. This avoids building
+the full-cell intermediate `g(ω,...)` for efficiency. If `source` and/or `dest` are not
+`AbstractMatrix`, but an iterable of sites, `S` and `D` will be constructed as projectors
+onto said sites. In the multiorbital case, non-identity `source` and `dest` are not yet
+supported.
 
 # Examples
 
@@ -364,15 +372,20 @@ function Schur1DGreensSolution(g, ω; source = I, dest = I)
     return Schur1DGreensSolution(ω, L, R, dstmat, G∞S, GLR, GRL, boundary, orbstruct, tmp)
 end
 
+function flat_source_dest_matrix(a, g)
+    isflat(g.h) || throw(ArgumentError("`source` and `dest` different from the identity not yet supported in multiorbital Hamiltonians"))
+    return _flat_source_dest_matrix(a, g)
+end
+
 function flat_source_dest_matrix(id::UniformScaling, g)
     n = flatsize(g, 1)
     return Matrix(one(blockeltype(g)) * id, n, n)
 end
 
-flat_source_dest_matrix(sourcemat::AbstractMatrix, g) =
+_flat_source_dest_matrix(sourcemat::AbstractMatrix, g) =
     flatten(sourcemat, orbitalstructure(g))
 
-function flat_source_dest_matrix(sources, g)
+function _flat_source_dest_matrix(sources, g)
     n = length(sources)
     m = size(g, 1)
     T = blocktype(g)

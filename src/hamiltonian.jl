@@ -287,13 +287,19 @@ function flatten(src::SparseMatrixCSC{<:SMatrix{N,N,T}}, orbstruct, ::Type{T´} 
     return matrix
 end
 
+# Requires src to be a square matrix with structure like a Hamiltonian
 function flatten(src::StridedMatrix{<:SMatrix{N,N,T}}, orbstruct, ::Type{T´} = T) where {N,T,T´}
+    dim = last(orbstruct.offsets)
+    size(src) == (dim, dim) || throw(ArgumentError("Trying to flatten a matrix of size incompatible with orbital structure"))
     dim´ = last(orbstruct.flatoffsets)
     dst = similar(src, T´, dim´, dim´)
     return flatten!(dst, src, orbstruct)
 end
 
+# Requires src to be a matrix with first dimension like a Hamiltonian
 function flatten(src::StridedMatrix{<:SVector{N,T}}, orbstruct, ::Type{T´} = T) where {N,T,T´}
+    dim = last(orbstruct.offsets)
+    size(src, 1) == dim || throw(ArgumentError("Trying to flatten a matrix of size incompatible with orbital structure"))
     dim´ = last(orbstruct.flatoffsets)
     dst = similar(src, T´, dim´, size(src, 2))
     return flatten!(dst, src, orbstruct)
@@ -460,7 +466,6 @@ Ket{SVector{2, ComplexF64}}: ket with a 2 × 1 amplitude matrix
 unflatten(o::OrbitalStructure) = x -> unflatten(x, o)
 
 # Pending implementation for Hamiltonian, Lattice, Unitcell
-
 unflatten_orbitals(v::AbstractVector, o::OrbitalStructure) =
     isunflat_orbitals(v, o) ? copy(v) : unflatten!(similar(v, orbitaltype(o), dimh(o)), v, o)
 unflatten_orbitals(m::AbstractMatrix, o::OrbitalStructure) =
@@ -471,10 +476,10 @@ unflatten_blocks(m::AbstractMatrix, o::OrbitalStructure) =
 maybe_unflatten_orbitals(x, o) = isunflat_orbitals(x, o) ? x : unflatten_orbitals(x, o)
 maybe_unflatten_blocks(x, o) = isunflat_blocks(x, o) ? x : unflatten_blocks(x, o)
 
-isunflat_orbitals(m, o) = orbitaltype(o) == eltype(m) && size(m, 1) == dimh(o)
-isunflat_blocks(m, o) = blocktype(o) == eltype(m) && size(m, 1) == dimh(o)
+isunflat_orbitals(m, o) = orbitaltype(o) == eltype(m)
+isunflat_blocks(m, o) = blocktype(o) == eltype(m)
 
-function unflatten!(v::AbstractArray, vflat::AbstractArray, o::OrbitalStructure)
+function unflatten!(v::AbstractArray, vflat::AbstractArray{<:Number}, o::OrbitalStructure)
     dimflat = last(o.flatoffsets)
     check_unflatten_dst_dims(v, dimh(o))
     check_unflatten_src_dims(vflat, dimflat)
