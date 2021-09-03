@@ -350,6 +350,8 @@ function densityKPM(momenta::MomentaKPM{T}; resolution = 2) where {T}
     xk = [cos(π * (k + 0.5) / numpoints) for k in 0:numpoints - 1]
     @. ρlist = center + halfwidth * ρlist / (π * sqrt(1.0 - xk^2))
     @. xk = center + halfwidth * xk
+    reverse!(xk)
+    reverse!(ρlist)
     return xk, ρlist
 end
 
