@@ -26,7 +26,7 @@ end
 
 ## GreenFunction API ##
 
-function (s::AppliedModelGreenSolver)(ω::C, Σblocks, contactorbs) where {C}
+function build_slicer(s::AppliedModelGreenSolver, g, ω::C, Σblocks, contactorbs; params...) where {C}
     n = norbitals(contactorbs)
     fω = s.f(ω)
     g0contacts = Matrix{C}(undef, n, n)

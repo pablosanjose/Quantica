@@ -1,6 +1,7 @@
 ############################################################################################
 # SelfEnergy(h, glead::GreenFunctionSchurEmptyLead; kw...)
 #   Extended self energy solver for deflated ΣL or ΣR Schur factors of lead unitcell
+#   See notes on solvers/green/schur.jl
 #region
 
 struct SelfEnergySchurSolver{T,B,V<:Union{Missing,Vector{Int}},H<:AbstractHamiltonian} <: ExtendedSelfEnergySolver

@@ -62,7 +62,9 @@ apply(::GS.SparseLU, h::AbstractHamiltonian, cs::Contacts) =
 #region ## call ##
 
 # Σblocks and contactorbitals are not used here, because they are already inside invgreen
-function (s::AppliedSparseLUGreenSolver{C})(ω, Σblocks, contactorbitals) where {C}
+function build_slicer(s::AppliedSparseLUGreenSolver{C}, g, ω, Σblocks, contactorbitals; params...) where {C}
+    # We must apply params to hamiltonian(g) because its base harmonic is aliased into invgreen as a MatrixBlock
+    call!(parent(g); params...)
     invgreen = s.invgreen
     nonextrng = orbrange(invgreen)
     unitcinds = invgreen.unitcinds

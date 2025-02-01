@@ -708,7 +708,7 @@ end
 
 #region ## call ##
 
-function (s::AppliedBandsGreenSolver)(ω, Σblocks, corbitals)
+function build_slicer(s::AppliedBandsGreenSolver, g, ω, Σblocks, corbitals; params...)
     g0slicer = BandsGreenSlicer(complex(ω), s)
     gslicer = maybe_TMatrixSlicer(g0slicer, Σblocks, corbitals)
     return gslicer

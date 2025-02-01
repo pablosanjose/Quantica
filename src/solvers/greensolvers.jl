@@ -3,7 +3,7 @@
 #   All new solver::AbstractGreenSolver must live in the GreenSolvers module, and must implement
 #     - apply(solver, h::AbstractHamiltonian, c::Contacts) -> AppliedGreenSolver
 #   All new s::AppliedGreenSolver must implement (with Σblock a [possibly nested] tuple of MatrixBlock's)
-#      - s(ω, Σblocks, ::ContactOrbitals) -> GreenSlicer
+#      - build_slicer(s, g::GreenFunction, ω, Σblocks, ::ContactOrbitals; params...) -> GreenSlicer
 #      - minimal_callsafe_copy(s, parentham, parentcontacts)  # injects aliases from parent
 #      - optional: needs_omega_shift(s) (has a `true` default fallback)
 #   A gs::GreenSlicer's allows to compute G[gi, gi´]::AbstractMatrix for indices gi
@@ -35,9 +35,10 @@ struct SparseLU <:AbstractGreenSolver end
 struct Schur{T<:AbstractFloat} <: AbstractGreenSolver
     shift::T                      # Tunable parameter in algorithm, see Ω in scattering.pdf
     boundary::T                   # Cell index for boundary (float to allow boundary at Inf)
+    axis::Int                     # free axis to use for n-dimensional AbstractHamiltonians
 end
 
-Schur(; shift = 1.0, boundary = Inf) = Schur(shift, float(boundary))
+Schur(; shift = 1.0, boundary = Inf, axis = 1) = Schur(shift, float(boundary), axis)
 
 struct KPM{B<:Union{Missing,NTuple{2}},A} <: AbstractGreenSolver
     order::Int

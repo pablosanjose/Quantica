@@ -195,7 +195,7 @@ end
 
 #region ## call ##
 
-function (s::AppliedKPMGreenSolver{T})(ω, Σblocks, corbitals) where {T}
+function build_slicer(s::AppliedKPMGreenSolver{T}, g, ω, Σblocks, corbitals; params...) where {T}
     g0contacts = KPMgreen(s.momenta, ω, s.bandCH)
     # We rely on TMatrixSlicer to incorporate contact self-energies, and to slice contacts
     gslicer = TMatrixSlicer(g0contacts, Σblocks, corbitals)

@@ -44,7 +44,7 @@ apply(::GS.Spectrum, h::AbstractHamiltonian, ::Contacts) =
 
 #region ## call ##
 
-function (s::AppliedSpectrumGreenSolver)(ω, Σblocks, corbitals)
+function build_slicer(s::AppliedSpectrumGreenSolver, g, ω, Σblocks, corbitals; params...)
     g0slicer = SpectrumGreenSlicer(complex(ω), s)
     gslicer = maybe_TMatrixSlicer(g0slicer, Σblocks, corbitals)
     return gslicer

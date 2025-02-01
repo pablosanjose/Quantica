@@ -54,12 +54,11 @@ function call!(g::GreenFunction{T}, ω::T; params...) where {T}
 end
 
 function call!(g::GreenFunction{T}, ω::Complex{T}; params...) where {T}
-    h = parent(g)   # not hamiltonian(h). We want the ParametricHamiltonian if it exists.
+    gsolver = solver(g)
     contacts´ = contacts(g)
-    call!(h; params...)
     Σblocks = call!(contacts´, ω; params...)
     corbs = contactorbitals(contacts´)
-    slicer = solver(g)(ω, Σblocks, corbs)
+    slicer = build_slicer(gsolver, g, ω, Σblocks, corbs; params...)
     return GreenSolution(g, slicer, Σblocks, corbs)
 end
 

@@ -1,3 +1,23 @@
+# NOTE: this solver is probably too convoluted and could benefit from a refactor to make it
+# more maintainable. The priority here was performance (minimal number of computations)
+# The formalism is based on currently unpublished notes (scattering.pdf)
+
+# Design overview: The G₋₁₋₁, G₁₁ and G∞₀₀ slicers inside SchurGreenSlicer correspond to
+# boundary cells in seminf and origin cell in an infinite 1D Hamiltonian, based on a LU
+# solver. These are not computed upon creating SchurGreenSlicer, since not all are necessary
+# for any given slice. Same for their parent gL, dR and g∞ 0D unitcell GreenFunctions inside
+# AppliedSchurGreenSolver. Their respective OpenHamiltonians contain selfenergies with solver
+# type SelfEnergySchurSolver which themselves all alias the same SchurFactorsSolver devoted
+# to computing objects using the deflated Schur algorithm on which the selfenergies depend.
+# When building SchurGreenSlicer with a given ω and params we know for sure that we will
+# need the SchurFactorsSolver objects for that ω, but not which of G₋₁₋₁, G₁₁ or G∞₀₀.
+# We also don't want to compute the SchurFactorsSolver objects more than once for a given ω
+# Hence, we do a call!(fsolver::SchurFactorsSolver, ω) upon constructing SchurGreenSlicer,
+# but whenever building the uninitialized slicers G₁₁ etc we do a skipsolve_internal = true
+# to avoid recomputing SchurFactorsSolver. Also, since the unitcell Hamiltonians harmonics
+# h0, hm, hp in SchurFactorsSolver alias those of hamiltonian(g::GreenFunction), we need to
+# do call!(parent(g); params...) upon constructing SchurFactorsSolver too.
+
 ############################################################################################
 # SchurFactorsSolver - see scattering.pdf notes for derivations
 #   Auxiliary functions for AppliedSchurGreenSolverSolver
@@ -291,7 +311,7 @@ end
 #endregion
 
 ############################################################################################
-# AppliedSchurGreenSolver
+# AppliedSchurGreenSolver in 1D
 #region
 
 # Mutable: we delay initialization of some fields until they are first needed (which may be never)
@@ -352,7 +372,7 @@ end
 
 function apply(s::GS.Schur, h::AbstractHamiltonian1D{T}, contacts::Contacts) where {T}
     h´ = hamiltonian(h)
-    fsolver = SchurFactorsSolver(h´, s.shift)
+    fsolver = SchurFactorsSolver(h´, s.shift)  # aliasing of h´
     boundary = T(round(only(s.boundary)))
     ohL, ohR, oh∞, G, G∞ = schur_openhams_types(fsolver, h, boundary)
     solver = AppliedSchurGreenSolver{G,G∞}(fsolver, boundary, ohL, ohR, oh∞)
@@ -401,9 +421,10 @@ function minimal_callsafe_copy(s::AppliedSchurGreenSolver, parentham, _)
     return s´
 end
 
-function (s::AppliedSchurGreenSolver)(ω, Σblocks, corbitals)
-    # call! fsolver once for all the g's
-    call!(s.fsolver, ω)
+function build_slicer(s::AppliedSchurGreenSolver, g, ω, Σblocks, corbitals; params...)
+    # overwrites hamiltonian(g) with params whenever parent(g) isa ParametricHamiltonian
+    # Necessary because its harmonics are aliased in the SchurFactorSolver inside gsolver
+    call!(parent(g); params...)
     g0slicer = SchurGreenSlicer(ω, s)
     gslicer = maybe_TMatrixSlicer(g0slicer, Σblocks, corbitals)
     return gslicer
@@ -430,6 +451,7 @@ end
 #region
 
 # We delay initialization of most fields until they are first needed (which may be never)
+# should not have any contacts (we defer to TMatrixSlicer for that)
 mutable struct SchurGreenSlicer{C,A<:AppliedSchurGreenSolver}  <: GreenSlicer{C}
     ω::C
     solver::A
@@ -437,7 +459,7 @@ mutable struct SchurGreenSlicer{C,A<:AppliedSchurGreenSolver}  <: GreenSlicer{C}
     L::Matrix{C}
     R::Matrix{C}
     G₋₁₋₁::SparseLUGreenSlicer{C}   # These are independent of parent hamiltonian
-    G₁₁::SparseLUGreenSlicer{C}     # as they only rely on call!_output(fsolver)
+    G₁₁::SparseLUGreenSlicer{C}     # as they only rely on call!_output(solver.fsolver)
     G∞₀₀::SparseLUGreenSlicer{C}    # which is updated after call!(solver.fsolver, ω)
     L´G∞₀₀::Matrix{C}
     R´G∞₀₀::Matrix{C}
@@ -446,6 +468,9 @@ mutable struct SchurGreenSlicer{C,A<:AppliedSchurGreenSolver}  <: GreenSlicer{C}
     R´G₁₁L::Matrix{C}
     L´G₋₁₋₁R::Matrix{C}
     function SchurGreenSlicer{C,A}(ω, solver) where {C,A}
+        # call! the expensive fsolver only once to compute Schur factors, necessary to
+        # evaluate unitcell selfenergies in OpenHamiltonians of solver
+        call!(solver.fsolver, ω)
         s = new()
         s.ω = ω
         s.solver = solver
@@ -471,6 +496,8 @@ function Base.getproperty(s::SchurGreenSlicer, f::Symbol)
         # gs[sites...] will be call!-ing e.g. solver.g∞ with the wrong h0 (the one from
         # params´...). However, if `gs = g(ω; params...)` a copy was made, so it is safe.
         if f == :G₋₁₋₁
+            # we ran SchurFactorSolver when constructing s, so skipsolve_internal = true
+            # to avoid running it again
             s.G₋₁₋₁ = slicer(call!(solver.gL, s.ω; skipsolve_internal = true))
         elseif f == :G₁₁
             s.G₁₁ = slicer(call!(solver.gR, s.ω; skipsolve_internal = true))
@@ -718,6 +745,65 @@ function fermi_h!(result, s, ϕ, µ, β = 0; params...)
     getindex!(result, ρcell, s.orbaxes...)
     return result
 end
+
+#endregion
+
+
+############################################################################################
+# AppliedSchurGreenSolver in 2D
+#region
+
+# struct AppliedSchurGreenSolverND{L,S<:AppliedSchurGreenSolver,F}  <: AppliedGreenSolver
+#     solver1D::S
+#     wrapped_axes::NTuple{L,Int}
+#     phase_func::F                   #  phase_func(ϕ) = (; param_name = ϕ)
+# end
+
+# const GreenFunctionSchurND{T,L} = GreenFunction{T,<:Any,L,<:AppliedSchurGreenSolverND}
+
+# # should not have any contacts (we defer to TMatrixSlicer for that)
+# struct SchurGreenSlicerND{C,S<:GreenSlicer{C},S<:AppliedSchurGreenSolverND} <: GreenSlicer{C}
+#     ω::C
+#     g0slicer1D::S
+#     solver::S
+# end
+
+# function apply(s::GS.Schur, h::AbstractHamiltonian, contacts::Contacts)
+#     L = latdim(h)
+#     wrapped_axes = inds_complement(Val(L), (s.axis,))
+#     h´ = @torus(h, wrapped_axes, ϕ_internal)
+#     phase_func(ϕ_internal) = (; ϕ_internal)
+#     solver1D = apply(s, h´, contacts)
+#     return AppliedSchurGreenSolverND(solver1D, wrapped_axes, phase_func)
+# end
+
+# #region ## API ##
+
+# minimal_callsafe_copy(s::AppliedSchurGreenSolver, args...) =
+#     AppliedSchurGreenSolverND(minimal_callsafe_copy(s.solver1D, args...), s.wrapped_axes, s.phase_func)
+
+# needs_omega_shift(s::AppliedSchurGreenSolverND) = needs_omega_shift(s.solver1D)
+
+# (s::AppliedSchurGreenSolverND)(args...) = SchurGreenSlicerND(s.solver1D(args...), s)
+
+# # hook in one step above gsolver(ω, Σblocks, corbs), to use params and g - see greenfunction.jl
+# function build_slicer(g, gsolver::AppliedSchurGreenSolverND, ω, Σblocks, corbs; params...)
+#     # overwrites hamiltonian(g) with params whenever parent(g) isa ParametricHamiltonian
+#     # Necessary because its harmonics are aliased in the SchurFactorSolver inside gsolver
+#     call!(parent(g); params...)
+#     g0slicer1D = SchurGreenSlicer(ω, gsolver.solver1D)
+#     g0slicer = SchurGreenSlicerND(ω, g0slicer1D, s)
+#     gslicer = maybe_TMatrixSlicer(g0slicer, Σblocks, corbitals)
+#     return gslicer
+# end
+
+# function Base.getindex(s::SchurGreenSlicerND, i::CellOrbitals, j::CellOrbitals)
+#     dn = cell(i) - cell(j)
+#     s1D = s.g0slicer1D
+#     integrand(ϕ...) = s1D[i,j]
+# end
+
+#endregion
 
 #endregion
 
